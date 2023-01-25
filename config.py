@@ -1,0 +1,2 @@
+allowedChats = []
+botId = ""
