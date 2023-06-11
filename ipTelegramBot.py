@@ -3,6 +3,7 @@ import logging, requests
 import speedtest
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters)
+from lexicon.providers.ovh import Provider
 
 from config import *
 
@@ -12,8 +13,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 reply_keyboard = [
-    ["What's my ip?", "Who's at home?"],
-    ["Speed test"]
+    ["What's my ip?", "What's my VPN's ip?"],
+    ["Who's at home?", "Speed test"]
 ]
 
 markup = ReplyKeyboardMarkup(reply_keyboard)
@@ -42,6 +43,11 @@ async def ip_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return CHOOSING
 
 @restricted
+async def vpn_ip_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text(f"This is VPN's ip: {getVPNIp()}.",reply_markup=markup)
+    return CHOOSING
+
+@restricted
 async def whoIsAtHome_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(f"I'm not ready for this!",reply_markup=markup)
     return CHOOSING     
@@ -64,6 +70,13 @@ def getIp():
     url = "https://ifconfig.me/"
     return requests.get(url).text.strip()
 
+def getVPNIp():
+    provider = Provider(lexiconConfig)
+    provider.authenticate()
+
+    record_ip_address_response = provider.list_records(name=vpnUrl)
+    return record_ip_address_response[0]["content"]   
+
 def getConnectionSpeed():
     s = speedtest.Speedtest()
     s.get_servers()
@@ -85,6 +98,7 @@ def main() -> None:
         states={
             CHOOSING: [
                 MessageHandler(filters.Regex("^(What's my ip\?)$"), ip_choice),
+                MessageHandler(filters.Regex("^(What's my VPN's ip\?)$"), vpn_ip_choice),
                 MessageHandler(filters.Regex("^(Who's at home\?)$"), whoIsAtHome_choice),
                 MessageHandler(filters.Regex("^(Speed test)$"), speedtest_choice),
                 MessageHandler(filters.Regex("(.*?)"), random_choice),

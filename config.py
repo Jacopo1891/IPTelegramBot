@@ -1,2 +1,4 @@
 allowedChats = []
 botId = ""
+lexiconConfig = {}
+vpnUrl = ""
