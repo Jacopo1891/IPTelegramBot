@@ -1,10 +1,9 @@
 from functools import wraps
-import logging, requests
-import speedtest
+import logging, requests, speedtest, subprocess, re
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters)
-from lexicon.providers.ovh import Provider
-
+from lexicon.client import Client
+from lexicon.config import ConfigResolver
 from config import *
 
 logging.basicConfig(
@@ -49,7 +48,7 @@ async def vpn_ip_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 @restricted
 async def whoIsAtHome_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text(f"I'm not ready for this!",reply_markup=markup)
+    await update.message.reply_text(f"Devices:\n{get_connected_devices()}",reply_markup=markup)
     return CHOOSING     
 
 @restricted
@@ -71,11 +70,14 @@ def getIp():
     return requests.get(url).text.strip()
 
 def getVPNIp():
-    provider = Provider(lexiconConfig)
-    provider.authenticate()
-
-    record_ip_address_response = provider.list_records(name=vpnUrl)
-    return record_ip_address_response[0]["content"]   
+    config = ConfigResolver().with_dict(lexiconConfig)
+    
+    with Client(config) as operations:
+        records = operations.list_records(name=vpnUrl)
+        if records and len(records) > 0:
+            return records[0]["content"]
+        else:
+            return "IP NOT found"
 
 def getConnectionSpeed():
     s = speedtest.Speedtest()
@@ -85,6 +87,26 @@ def getConnectionSpeed():
     s.upload()   
     res = s.results.dict()
     return res["download"], res["upload"], res["ping"]
+
+def get_connected_devices():
+    result = subprocess.run(['nmap', '-sn', '-R', '192.168.1.0/24'], capture_output=True, text=True)
+    nmap_result = result.stdout
+    
+    ip_regex = re.compile(r'Nmap scan report for (\S+) \((\d+\.\d+\.\d+\.\d+)\)|Nmap scan report for (\d+\.\d+\.\d+\.\d+)')
+    
+    device_list = ""
+
+    for line in nmap_result.splitlines():
+        match = ip_regex.search(line)
+        if match:
+            if match.group(1):  # Nome host e IP
+                hostname = match.group(1)
+                ip_address = match.group(2)
+                device_list += f'Hostname: {hostname}, IP: {ip_address}\n'
+            else:  # Solo IP senza nome host
+                ip_address = match.group(3)
+                device_list += f'Hostname: --, IP: {ip_address}\n'
+    return device_list
 
 def main() -> None:
     if(botId == "" or not allowedChats):
